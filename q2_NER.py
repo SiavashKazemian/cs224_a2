@@ -18,16 +18,28 @@ class Config(object):
   information parameters. Model objects are passed a Config() object at
   instantiation.
   """
-  embed_size = 50
-  batch_size = 64
-  label_size = 5
-  hidden_size = 100
-  max_epochs = 24 
-  early_stopping = 2
-  dropout = 0.9
-  lr = 0.001
-  l2 = 0.001
-  window_size = 3
+  _embed_size = 50
+  _batch_size = 64
+  _label_size = 5
+  _hidden_size = 100
+  _max_epochs = 3 
+  _early_stopping = 2
+  _dropout = 0.9
+  _lr = 0.001
+  _l2 = 0.001
+  _window_size = 3
+  
+  def __init__(self,es=_embed_size,bs=_batch_size,ls=_label_size,hs=_hidden_size,me=_max_epochs,early_s=_early_stopping,d=_dropout,lr=_lr,l2=_l2,ws=_window_size):
+    self.embed_size=es
+    self.batch_size=bs
+    self.label_size=ls
+    self.hidden_size=hs
+    self.max_epochs=me
+    self.early_stopping = early_s
+    self.dropout=d
+    self.lr=lr
+    self.l2=l2
+    self.window_size=ws
 
 class NERModel(LanguageModel):
   """Implements a NER (Named Entity Recognition) model.
@@ -122,11 +134,9 @@ class NERModel(LanguageModel):
     """
     
     ### YOUR CODE HERE
-    feed_dict = {self.input_placeholder: input_batch}
+    feed_dict = {self.input_placeholder: input_batch, self.dropout_placeholder:dropout}
     if label_batch is not None:
         feed_dict[self.labels_placeholder] = label_batch
-    if dropout is not None:
-        feed_dict[self.dropout_placeholder] = dropout
     ### END YOUR CODE
     return feed_dict
 
@@ -208,7 +218,8 @@ class NERModel(LanguageModel):
         y = tf.matmul(h,U)+b2
         if self.config.l2:
             tf.add_to_collection('total_loss',0.5 * self.config.l2 * tf.nn.l2_loss(U))
-    output = tf.nn.dropout(y, self.dropout_placeholder)
+    if self.dropout_placeholder is not None:
+        output = tf.nn.dropout(y, self.dropout_placeholder)
     ### END YOUR CODE
     return output 
 
@@ -258,7 +269,7 @@ class NERModel(LanguageModel):
   def __init__(self, config):
     """Constructs the network using the helper functions defined above."""
     self.config = config
-    self.load_data(debug=False)
+    self.load_data(debug=True)
     self.add_placeholders()
     window = self.add_embedding()
     y = self.add_model(window)
@@ -354,24 +365,24 @@ def save_predictions(predictions, filename):
     for prediction in predictions:
       f.write(str(prediction) + "\n")
 
-def test_NER():
+def test_NER(config):
   """Test NER model implementation.
-
   You can use this function to test your implementation of the Named Entity
   Recognition network. When debugging, set max_epochs in the Config object to 1
   so you can rapidly iterate.
   """
-  config = Config()
+  #config = Config()
+  tf.reset_default_graph()
   with tf.Graph().as_default():
     model = NERModel(config)
 
-    init = tf.initialize_all_variables()
+    init = tf.global_variables_initializer()
     saver = tf.train.Saver()
 
     with tf.Session() as session:
       best_val_loss = float('inf')
       best_val_epoch = 0
-
+      results = []
       session.run(init)
       for epoch in range(config.max_epochs):
         print('Epoch {}'.format(epoch))
@@ -383,6 +394,7 @@ def test_NER():
         print('Training loss: {}'.format(train_loss))
         print('Training acc: {}'.format(train_acc))
         print('Validation loss: {}'.format(val_loss))
+        results.append((float(train_loss),float(val_loss)))
         if val_loss < best_val_loss:
           best_val_loss = val_loss
           best_val_epoch = epoch
@@ -403,6 +415,21 @@ def test_NER():
       print('Writing predictions to q2_test.predicted')
       _, predictions = model.predict(session, model.X_test, model.y_test)
       save_predictions(predictions, "q2_test.predicted")
-
+      return results
 if __name__ == "__main__":
-  test_NER()
+  import json
+  with open('results.json','w') as f:
+    output = []
+    config = Config()
+    d = test_NER(config)
+    output.append({'desc':'c1','data':d})
+    config = Config(lr=0.0001)
+    d = test_NER(config)
+    output.append({'desc':'c_lr','data':d})
+    config = Config(ws=5)
+    d = test_NER(config)
+    output.append({"desc":'c_ws','data':d})
+    config=Config(d=None)
+    d = test_NER(config)
+    output.append({'desc':'no dump','data':d})
+    json.dump(output,f)
